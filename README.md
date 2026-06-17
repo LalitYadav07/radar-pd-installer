@@ -21,9 +21,33 @@ Both installers require internet access for Python dependencies and source
 checkout. If Python 3.12 is not available, the installers bootstrap a local
 Python 3.12 with `uv`.
 
+On apt-based Linux systems, the installer also checks for common system
+runtime packages needed by Python virtual environments and GSAS-II binaries.
+If missing, it attempts to install them with `sudo apt-get`:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y python3.12-venv libgfortran5
+```
+
+Set `RADAR_PD_AUTO_APT=0` to disable this automatic apt step and receive the
+manual command instead.
+
+If an existing Python 3.12 is present but cannot create virtual environments
+with pip, the Linux installer first tries the apt repair above. If that does
+not fix the active Python, it falls back to a local uv-managed Python 3.12 under
+the install bootstrap directory.
+
 The default install also downloads the built-in RADAR-PD neutron and X-ray
 catalog archives from the configured Google Drive sources. Use the documented
 skip options below if you need an app-only install.
+
+On Linux, the installer preinstalls CPU-only PyTorch from the official PyTorch
+CPU wheel index before installing RADAR-PD. This prevents pip from pulling large
+CUDA wheels on small CPU-only cloud or workstation images. Set
+`RADAR_PD_PREINSTALL_CPU_TORCH=0` if you intentionally want pip/PyPI to choose
+the Torch build, or set `RADAR_PD_TORCH_SPEC` / `RADAR_PD_TORCH_INDEX_URL` to
+pin a specific CPU Torch build.
 
 ## Quick Start: Linux
 
@@ -53,6 +77,20 @@ Skip catalog download:
 ```bash
 curl -LsSf https://raw.githubusercontent.com/LalitYadav07/radar-pd-installer/main/install.sh \
   | RADAR_PD_SKIP_CATALOGS=1 bash
+```
+
+Disable automatic apt installation and print missing system packages instead:
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/LalitYadav07/radar-pd-installer/main/install.sh \
+  | RADAR_PD_AUTO_APT=0 bash
+```
+
+Use PyPI/default Torch resolution instead of preinstalling CPU-only Torch:
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/LalitYadav07/radar-pd-installer/main/install.sh \
+  | RADAR_PD_PREINSTALL_CPU_TORCH=0 bash
 ```
 
 Launch:
@@ -152,6 +190,14 @@ Run it manually any time:
 radar-pd doctor --smoke-gsas-project
 ```
 
+Run only the Linux installer preflight without creating the RADAR-PD
+environment or downloading app dependencies:
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/LalitYadav07/radar-pd-installer/main/install.sh \
+  | RADAR_PD_PREFLIGHT_ONLY=1 bash
+```
+
 ## Data Catalogs
 
 The default installers download the built-in RADAR-PD catalogs into the cloned
@@ -192,9 +238,12 @@ alongside the RADAR-PD run outputs.
 Linux:
 
 ```bash
+sudo apt-get update
+sudo apt-get install -y python3.12-venv libgfortran5
 python3.12 -m venv radar-pd-env
 source radar-pd-env/bin/activate
 python -m pip install --upgrade pip
+python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
 python -m pip install \
   "radar-pd-gsasii-runtime @ https://raw.githubusercontent.com/LalitYadav07/radar-pd-installer/main/wheelhouse/radar_pd_gsasii_runtime-0.0.1-cp312-cp312-linux_x86_64.whl" \
   "radar-pd[app] @ git+https://github.com/LalitYadav07/radar-pd-installer.git#subdirectory=radar_pd"
@@ -252,6 +301,51 @@ Windows:
 powershell -ExecutionPolicy Bypass -File .\install.ps1 `
   -InstallRoot $PWD `
   -PythonBin C:\Path\To\python.exe
+```
+
+### Ubuntu reports `ensurepip is not available`
+
+The system Python can exist without the venv support package. The Linux
+installer now checks this before creating the RADAR-PD environment and attempts
+to install the matching package automatically on apt-based systems. If the
+active Python still cannot create a venv after that, the installer falls back
+to a local uv-managed Python 3.12.
+
+Manual fix:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y python3.12-venv
+```
+
+### GSAS-II reports `pyspg not found` or `pypowder is not available`
+
+If the compiled GSAS-II modules exist but Linux cannot load them, the usual
+missing dependency is `libgfortran.so.5`. The Linux installer now checks this
+before the GSAS-II smoke test and attempts to install `libgfortran5`
+automatically on apt-based systems.
+
+Manual fix:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y libgfortran5
+```
+
+### Torch tries to download large CUDA wheels
+
+The Linux installer preinstalls CPU-only Torch by default:
+
+```bash
+python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+```
+
+For a GPU machine with enough disk space, opt out and let PyPI choose the Torch
+build:
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/LalitYadav07/radar-pd-installer/main/install.sh \
+  | RADAR_PD_PREINSTALL_CPU_TORCH=0 bash
 ```
 
 ### Windows certificate error while bootstrapping Python
